@@ -1,0 +1,103 @@
+package arm32x.minecraft.commandblockide.client.update;
+
+import static arm32x.minecraft.commandblockide.client.CommandChainTracer.isCommandBlock;
+
+import arm32x.minecraft.commandblockide.client.gui.screen.CommandBlockIDEScreen;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import java.util.HashMap;
+import java.util.Map;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.TagParser;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.entity.CommandBlockEntity;
+import net.minecraft.world.level.block.state.BlockState;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public final class DataCommandUpdateRequester {
+	private static @Nullable DataCommandUpdateRequester INSTANCE = null;
+
+	private final Map<BlockPos, CommandBlockEntity> blocksToUpdate = new HashMap<>();
+
+	private DataCommandUpdateRequester() { }
+
+	public static DataCommandUpdateRequester getInstance() {
+		if (INSTANCE == null) {
+			return INSTANCE = new DataCommandUpdateRequester();
+		} else {
+			return INSTANCE;
+		}
+	}
+
+	public void requestUpdate(LocalPlayer player, CommandBlockEntity blockEntity) {
+		BlockPos position = blockEntity.getBlockPos();
+		blocksToUpdate.put(position, blockEntity);
+
+		String command = String.format("data get block %d %d %d", position.getX(), position.getY(), position.getZ());
+		player.connection.sendCommand(command);
+	}
+
+	public void clear() {
+		blocksToUpdate.clear();
+	}
+
+	public boolean handleFeedback(Minecraft client, TranslatableContents message) {
+		Object[] args = message.getArgs();
+		LOGGER.trace("Handling feedback for message {} with args {}.", message, args);
+		if (args.length != 4 || args[0] == null || args[1] == null || args[2] == null || args[3] == null) return false;
+
+		BlockPos position;
+		try {
+			position = new BlockPos(Integer.parseInt(getStringFromText(args[0])), Integer.parseInt(getStringFromText(args[1])), Integer.parseInt(getStringFromText(args[2])));
+		} catch (NumberFormatException ex) {
+			LOGGER.error("Could not get block position from command feedback.");
+			return false;
+		}
+		CommandBlockEntity blockEntity = blocksToUpdate.remove(position);
+		if (blockEntity == null) {
+			LOGGER.debug("Block {} not queued for update.", position);
+			return false;
+		}
+
+		if (client.level == null || blockEntity != client.level.getBlockEntity(position)) {
+			LOGGER.warn("Client is outside of a world.");
+			return false;
+		}
+		BlockState blockState = client.level.getBlockState(position);
+		if (!isCommandBlock(blockState)) {
+			LOGGER.debug("Block {} is not a command block.", position);
+			return false;
+		}
+
+		String stringifiedTag = getStringFromText(args[3]);
+		@Nullable CompoundTag tag;
+		try {
+			tag = TagParser.parseTag(stringifiedTag);
+		} catch (CommandSyntaxException ex) {
+			LOGGER.error("Error parsing feedback from data command.", ex);
+			return false;
+		}
+
+		blockEntity.loadWithComponents(tag, client.level.registryAccess());
+		if (client.screen instanceof CommandBlockIDEScreen) {
+			((CommandBlockIDEScreen)client.screen).update(position);
+		}
+
+		return true;
+	}
+
+	private static String getStringFromText(Object object) {
+		if (object instanceof Component text) {
+			return text.getString();
+		} else {
+			return object.toString();
+		}
+	}
+
+	private static final Logger LOGGER = LoggerFactory.getLogger(DataCommandUpdateRequester.class);
+}

@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "arm32x.minecraft.commandblockide.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": ["server.PathPackResourcesAccessor"],
+  "client": [
+    "client.ClientPacketListenerMixin",
+    "client.LocalPlayerMixin",
+    "client.ChatListenerMixin"
+  ],
+  "injectors": {"defaultRequire": 1}
+}
