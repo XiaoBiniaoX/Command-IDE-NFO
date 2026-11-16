@@ -1,0 +1,118 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+    id 'eclipse'
+    id 'maven-publish'
+}
+
+version = '1.0.0'
+group = 'arm32x.minecraft'
+archivesBaseName = 'command-block-ide'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'mixin.debug.export', 'true'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            mods {
+                commandblockide {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            mods {
+                commandblockide {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        data {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            args '--mod', 'commandblockide', '--all', '--output', file('src/generated/resources/')
+            mods {
+                commandblockide {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.6'
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+}
+
+mixin {
+    add sourceSets.main, 'commandblockide.refmap.json'
+    config 'mixins.commandblockide.json'
+}
+
+// Substitute the ${...} placeholders in META-INF/mods.toml and pack.mcmeta
+// with the values from gradle.properties. Forge does NOT do this at runtime,
+// so without this the shipped mods.toml stays unparseable ("corrupt or
+// misconfigured toml") and the mod is rejected at load time.
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+        minecraft_version      : minecraft_version,
+        minecraft_version_range: minecraft_version_range,
+        forge_version          : forge_version,
+        forge_version_range    : forge_version_range,
+        loader_version_range   : loader_version_range,
+        mod_id                 : mod_id,
+        mod_name               : mod_name,
+        mod_license            : mod_license,
+        mod_version            : mod_version,
+        mod_group_id           : mod_group_id,
+        mod_authors            : mod_authors,
+        mod_description        : mod_description
+    ]
+    inputs.properties replaceProperties
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+    // Guard: Forge cannot parse a mods.toml that still contains ${...}
+    // placeholders ("corrupt or misconfigured toml"), and the mod would be
+    // silently rejected at load time. Fail the build instead.
+    doLast {
+        def modsToml = file("${project.buildDir}/resources/main/META-INF/mods.toml")
+        if (modsToml.exists()) {
+            def text = modsToml.getText('UTF-8')
+            if (text.contains('${')) {
+                throw new GradleException(
+                    "META-INF/mods.toml still contains unsubstituted placeholders:\n" + text)
+            }
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:-processing'
+}
