@@ -1,0 +1,10 @@
+{
+    "required": true,
+    "minVersion": "0.8",
+    "compatibilityLevel": "JAVA_8",
+    "package": "arm32x.minecraft.commandblockide.mixin",
+    "refmap": "refmap.commandblockide.json",
+    "mixins": ["server.FunctionManagerAccessor"],
+    "client": ["client.GuiCommandBlockAccessor", "client.ClientPacketListenerMixin"],
+    "server": []
+}
